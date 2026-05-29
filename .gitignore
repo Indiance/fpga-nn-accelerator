@@ -1,0 +1,8 @@
+fpga-accel/
+work/
+*.npz
+*.gz
+weights/
+__pycache__/
+data/
+checkpoints/
