@@ -26,12 +26,8 @@ module mac_unit #(
     output logic valid_out,
     output logic signed [31:0] acc_out
 );
-
-logic signed [31:0] mult_result;
-always_comb begin
-    mult_result = a * b;
-end
-
+logic signed [(2*DATA_WIDTH)-1:0] mult_result;
+assign mult_result = a * b;
 always_ff @(posedge clk) begin
     if (rst) begin
         acc_out   <= 0;
