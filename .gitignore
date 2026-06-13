@@ -6,3 +6,6 @@ weights/
 __pycache__/
 data/
 checkpoints/
+.codex/
+.agents/
+*.pdf

@@ -24,7 +24,12 @@ always_ff @(posedge clk) begin
     if (valid_in) begin
         for (i = 0; i < OUTPUTS; i++) begin
             for (j = 0; j < INPUTS; j++) begin
-                weights[i][j] <= mem[base_addr + i*INPUTS + j];
+                if (base_addr + i*INPUTS + j < TOTAL_WEIGHTS) begin
+                    weights[i][j] <= mem[base_addr + i*INPUTS + j];
+                end
+                else begin
+                    weights[i][j] <= 0;
+                end
             end
         end
     end

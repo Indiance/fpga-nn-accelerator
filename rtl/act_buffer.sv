@@ -31,14 +31,20 @@ always_ff @(posedge clk) begin
 
         // write
         if (write_en) begin
-            mem[write_addr] <= write_data;
+            if (write_addr < DEPTH) begin
+                mem[write_addr] <= write_data;
+            end
         end
 
         // read 8 activations at once
         if (read_en) begin
-
             for (i = 0; i < READ_WIDTH; i++) begin
-                activations[i] <= mem[read_addr + i];
+                if (read_addr + i < DEPTH) begin
+                    activations[i] <= mem[read_addr + i];
+                end
+                else begin
+                    activations[i] <= 0;
+                end
             end
         end
     end

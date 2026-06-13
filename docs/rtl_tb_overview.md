@@ -15,11 +15,14 @@ fully connected layer experiments.
 
 - `rtl/mac_unit.sv`: parameterized signed fixed-point MAC stage.
 - `rtl/mac_array.sv`: parameterized signed fixed-point dot-product pipeline.
-- `rtl/act_buffer.sv`: parameterized activation storage with one write port
-  and a multi-word registered read window.
-- `tb/mac_unit_tb.sv`: unit test for positive, negative, accumulated, and zero
-  Q8.8 multiply-accumulate cases.
+- `rtl/act_buffer.sv`: parameterized activation storage with one write port and a multi-word registered read window.
+- `rtl/relu_unit.sv`: combinational bias adder with optional ReLU activation and signed saturation logic.
+- `rtl/fsm_controller.sv`: five-state FSM sequencer managing tiles, dot-products, and post-processing.
+- `rtl/layer_fc.sv`: top-level fully connected layer datapath combining buffer, weight memory, MAC array, and activation unit.
+- `tb/mac_unit_tb.sv`: unit test for positive, negative, accumulated, and zero Q8.8 multiply-accumulate cases.
 - `tb/mac_array_tb.sv`: unit test for a 2-input by 2-output Q8.8 MAC array.
+- `tb/tb_relu_unit.sv`: unit test verifying ReLU enable/disable, overflow, and underflow saturation.
+- `tb/tb_layer_fc.sv`: tiled integration test for the fully connected layer using python-generated test vectors.
 
 ## Fixed-Point Convention
 
@@ -171,6 +174,35 @@ through `23`.
   same-cycle read/write address collisions unless the desired behavior is
   explicitly defined later.
 
+## `relu_unit.sv`
+
+`relu_unit` performs combinational post-processing on the accumulated 32-bit output:
+
+1. **Bias Addition**: Sign-extends and adds the `bias_in` value to the 32-bit accumulator `acc_in`:
+   $$\text{biased\_val} = \text{acc\_in} + \text{bias\_in}$$
+2. **ReLU Activation**: If `RELU_ENABLE` is true and the biased value is negative, it zeroes the output.
+3. **Saturation Clipping**: Otherwise, it saturates the output to the standard signed 16-bit limits to prevent overflow:
+   - Upper bound: `32767` (`OUT_MAX` for `DATA_WIDTH = 16`)
+   - Lower bound: `-32768` (`OUT_MIN` for `DATA_WIDTH = 16`)
+
+## `fsm_controller.sv`
+
+`fsm_controller` is the sequencer FSM that manages the execution flow of the fully connected layer:
+
+- **IDLE**: Initial state. Starts execution and resets pointers when `start` goes high.
+- **FETCH**: Asserts `fetch_en` to fetch an activation window from `act_buffer` and weights from `weight_memory`.
+- **DRAIN**: Waits for the MAC array pipeline to complete computation (`mac_valid_out_r`). Increments the `in_tile` index and loops back to `FETCH` until all input tiles are processed.
+- **POSTPROC**: Sequentially runs the accumulated values through the `relu_unit` by asserting `postproc_en` and incrementing the `pp_cnt` pointer. Once a tile of outputs is processed, it transitions to `FETCH` for the next output tile.
+- **DONE_ST**: Asserts `done` for one cycle when all input/output tiles are fully processed, then returns to `IDLE`.
+
+## `layer_fc.sv`
+
+`layer_fc` connects the sub-modules together into a complete fully connected layer wrapper:
+
+- Maps the large matrix product ($OUTPUT\_SIZE \times INPUT\_SIZE$) to a smaller physical MAC array by tiling both input and output dimensions.
+- Features ports for writing input activations (`act_wr_en`, `act_wr_addr`, `act_wr_data`) and reading outputs (`act_rd_addr`, `act_rd_data`).
+- Automatically coordinates FSM transitions, weight loading, data path pipelines, bias additions, and activation/saturation logic.
+
 ## Testbench Behavior
 
 `tb/mac_unit_tb.sv` generates a 100 MHz clock with `always #5 clk = ~clk`,
@@ -212,16 +244,12 @@ and the current registered `outputs` update one clock after `valid_out`.
 
 With Icarus Verilog:
 
+### 1. MAC Unit Test
 ```sh
 iverilog -g2012 -o mac_unit_tb.vvp rtl/mac_unit.sv tb/mac_unit_tb.sv
 vvp mac_unit_tb.vvp
-
-iverilog -g2012 -o mac_array_tb.vvp rtl/mac_array.sv tb/mac_array_tb.sv
-vvp mac_array_tb.vvp
 ```
-
-Expected `mac_unit` output:
-
+Expected output:
 ```text
 PASS: TEST1
 PASS: TEST2
@@ -230,10 +258,121 @@ PASS: TEST4
 ALL TESTS COMPLETE
 ```
 
-Expected `mac_array` output:
-
+### 2. MAC Array Test
+```sh
+iverilog -g2012 -o mac_array_tb.vvp rtl/mac_array.sv tb/mac_array_tb.sv
+vvp mac_array_tb.vvp
+```
+Expected output:
 ```text
 PASS output0
 PASS output1
 ALL TESTS PASSED
+```
+
+### 3. ReLU Unit Test
+```sh
+iverilog -g2012 -o relu_unit_tb.vvp rtl/relu_unit.sv tb/tb_relu_unit.sv
+vvp relu_unit_tb.vvp
+```
+Expected output:
+```text
+PASS: Test 1.1 (Positive within range) - Got: 1500
+PASS: Test 1.2 (Negative to zero) - Got: 0
+PASS: Test 1.3 (Positive overflow saturation) - Got: 32767
+PASS: Test 1.4 (Extreme negative) - Got: 0
+PASS: Test 2.1 (No ReLU, Positive within range) - Got: 1500
+PASS: Test 2.2 (No ReLU, Negative within range) - Got: -2500
+PASS: Test 2.3 (No ReLU, Positive overflow) - Got: 32767
+PASS: Test 2.4 (No ReLU, Negative underflow) - Got: -32768
+tb_relu_unit simulation finished!
+```
+
+### 4. Fully Connected Layer Test
+```sh
+# Generate the test vectors
+python3 python/fixed_point_infer.py
+
+# Run simulation
+iverilog -g2012 -o layer_fc_tb.vvp rtl/relu_unit.sv rtl/mac_unit.sv rtl/mac_array.sv rtl/act_buffer.sv rtl/weight_memory.sv rtl/fsm_controller.sv rtl/layer_fc.sv tb/tb_layer_fc.sv
+vvp layer_fc_tb.vvp
+```
+Expected output:
+```text
+Loading inputs into act_buffer...
+Starting layer computation...
+Waiting for done signal...
+Done signal asserted! Verification in progress...
+PASS: Output 0 - Got: 1619 (0x0653)
+PASS: Output 1 - Got: 2216 (0x08a8)
+PASS: Output 2 - Got: 0 (0x0000)
+PASS: Output 3 - Got: 437 (0x01b5)
+PASS: Output 4 - Got: 694 (0x02b6)
+PASS: Output 5 - Got: 1028 (0x0404)
+PASS: Output 6 - Got: 0 (0x0000)
+PASS: Output 7 - Got: 1597 (0x063d)
+tb_layer_fc simulation finished!
+```
+
+### 5. Top-Level MNIST Accelerator Integration Test
+
+#### Using Icarus Verilog:
+```sh
+# Generate the MLP weights and MNIST test images (runs Python training for 3 epochs)
+python3 python/fixed_point_mlp_infer.py
+
+# Run simulation
+iverilog -g2012 -o nn_top_tb.vvp \
+  rtl/relu_unit.sv \
+  rtl/mac_unit.sv \
+  rtl/mac_array.sv \
+  rtl/act_buffer.sv \
+  rtl/weight_memory.sv \
+  rtl/fsm_controller.sv \
+  rtl/shifter_align.sv \
+  rtl/layer_fc.sv \
+  rtl/nn_top.sv \
+  tb/tb_nn_top.sv
+vvp nn_top_tb.vvp
+```
+
+#### Using ModelSim / QuestaSim (Console Mode):
+To compile and simulate successfully in ModelSim/QuestaSim without encountering memory limits or `SIGSEGV` bad pointer crashes from background wave logging, you must redirect WLF logging to `/dev/null` and disable signal transitions via `nolog -all`:
+
+```sh
+# Clean and re-initialize work library
+rm -rf work
+vlib work
+
+# Compile all source files
+vlog -sv rtl/relu_unit.sv \
+         rtl/mac_unit.sv \
+         rtl/mac_array.sv \
+         rtl/act_buffer.sv \
+         rtl/weight_memory.sv \
+         rtl/fsm_controller.sv \
+         rtl/shifter_align.sv \
+         rtl/layer_fc.sv \
+         rtl/nn_top.sv \
+         tb/tb_nn_top.sv
+
+# Run simulation with WLF logging disabled to /dev/null
+vsim -c -wlf /dev/null -do "nolog -all; run -all; quit" tb_nn_top
+```
+Expected output:
+```text
+==================================================
+Starting tb_nn_top MNIST Inference Verification...
+==================================================
+Image   0 - PASS (Prediction: 7, Label: 7) [Running accuracy: 1/1]
+Image  10 - PASS (Prediction: 0, Label: 0) [Running accuracy: 11/11]
+...
+Image  99 - PASS (Prediction: 9, Label: 9) [Running accuracy: 100/100]
+==================================================
+Inference Complete!
+Total correct predictions: 100 / 100
+Overall accuracy: 100%
+==================================================
+SUCCESS: Top-level classification accuracy (>= 90%) meets target requirements.
+==================================================
 ```
