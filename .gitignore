@@ -9,3 +9,6 @@ checkpoints/
 .codex/
 .agents/
 *.pdf
+transcript
+*.wlf
+*.vstf
