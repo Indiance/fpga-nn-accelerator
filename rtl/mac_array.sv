@@ -2,7 +2,10 @@ module mac_array #(
     parameter int DATA_WIDTH = 16,
     parameter int FRAC_BITS  = 8,
     parameter int INPUTS     = 8,
-    parameter int OUTPUTS    = 4
+    parameter int OUTPUTS    = 4,
+
+    localparam int PROD_WIDTH = 32,
+    localparam int LEVELS = $clog2(INPUTS)
 )(
     input  logic clk,
     input  logic rst,
@@ -15,51 +18,68 @@ module mac_array #(
     output logic valid_out
 );
 
-logic signed [31:0] partial_sum [OUTPUTS][INPUTS+1];
-logic valid_chain[OUTPUTS][INPUTS+1];
+// reduction tree storage
+logic signed [PROD_WIDTH-1:0] tree[OUTPUTS][LEVELS+1][INPUTS];
+logic valid_pipe[LEVELS+1];
+genvar o,i,l,n;
 
-genvar o;
-genvar i;
-
+// parallel multiples
 generate
-for(o=0;o<OUTPUTS;o++) begin : g_OUTPUT_PIPELINE
-    assign partial_sum[o][0] = '0;
-    assign valid_chain[o][0] = valid_in;
-    for(i=0;i<INPUTS;i++) begin : g_MAC_STAGE
-        mac_unit #(
-            .DATA_WIDTH(DATA_WIDTH),
-            .FRAC_BITS(FRAC_BITS)
-        ) mac_inst(
-            .clk(clk),
-            .rst(rst),
-            .valid_in(valid_chain[o][i]),
-            .a(activations[i]),
-            .b(weights[o][i]),
-            .acc_in(partial_sum[o][i]),
-            .acc_out(partial_sum[o][i+1]),
-            .valid_out(valid_chain[o][i+1])
-        );
+
+for(o=0;o<OUTPUTS;o++) begin
+    for(i=0;i<INPUTS;i++) begin
+        always_ff @(posedge clk) begin
+            if(rst)
+                tree[o][0][i] <= 0;
+            else if(valid_in)
+                tree[o][0][i] <= ($signed(activations[i]) * $signed(weights[o][i])) >>> FRAC_BITS;
+        end
+    end
+end
+endgenerate
+
+// adder tree
+generate
+
+for(l=0;l<LEVELS;l++) begin : LEVEL
+    localparam int NODES = INPUTS >> (l+1);
+    for(o=0;o<OUTPUTS;o++) begin
+        for(n=0;n<NODES;n++) begin
+            always_ff @(posedge clk) begin
+                if(rst)
+                    tree[o][l+1][n] <= 0;
+                else if(valid_pipe[l])
+                    tree[o][l+1][n] <= tree[o][l][2*n] + tree[o][l][2*n+1];
+            end
+        end
     end
 end
 endgenerate
 
 integer k;
-
-// Total latency from valid_in to outputs: INPUTS+1 cycles.
-// The pipeline itself takes INPUTS cycles to fill; the output
-// register adds one more cycle before outputs[] is valid.
-assign valid_out = valid_chain[0][INPUTS];
-// capture final results
+// valid pipeline
 always_ff @(posedge clk) begin
-    if (rst) begin
-        for (k = 0; k < OUTPUTS; k++) begin
-            outputs[k] <= 0;
-        end
+    if(rst)
+        valid_pipe <= '{default:0};
+    else begin
+        valid_pipe[0] <= valid_in;
+        for(k=1;k<=LEVELS;k++)
+            valid_pipe[k] <= valid_pipe[k-1];
     end
-    else if (valid_out) begin
-        for (k = 0; k < OUTPUTS; k++) begin
-            outputs[k] <= partial_sum[k][INPUTS];
-        end
+
+end
+
+assign valid_out = valid_pipe[LEVELS];
+
+// output register
+always_ff @(posedge clk) begin
+    if(rst) begin
+        for(k=0;k<OUTPUTS;k++)
+            outputs[k] <= 0;
+    end
+    else if(valid_pipe[LEVELS]) begin
+        for(k=0;k<OUTPUTS;k++)
+            outputs[k] <= tree[k][LEVELS][0];
     end
 end
 

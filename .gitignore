@@ -12,3 +12,5 @@ checkpoints/
 transcript
 *.wlf
 *.vstf
+.venv/
+.DS_Store

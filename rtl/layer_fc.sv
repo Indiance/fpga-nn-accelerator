@@ -122,7 +122,8 @@ fsm_controller #(
     .INPUT_SIZE (INPUT_SIZE),
     .OUTPUT_SIZE(OUTPUT_SIZE),
     .INPUTS     (INPUTS),
-    .OUTPUTS    (OUTPUTS)
+    .OUTPUTS    (OUTPUTS),
+    .PIPELINE_LATENCY($clog2(INPUTS) + 3)
 ) u_fsm_controller (
     .clk            (clk),
     .rst            (rst),

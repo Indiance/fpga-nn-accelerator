@@ -110,6 +110,8 @@ def main():
     weights_dir.mkdir(parents=True, exist_ok=True)
     tb_dir = repo_root / "tb"
     tb_dir.mkdir(parents=True, exist_ok=True)
+    checkpoints_dir = repo_root / "python" / "checkpoints"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
     print("Setting up MNIST dataset...")
     transform = transforms.Compose([
@@ -181,16 +183,16 @@ def main():
 
     print("Exporting tiled weight/bias memory files...")
     # Tiling shapes matching layer_fc config:
-    # FC1: INPUTS=8, OUTPUTS=4
-    # FC2: INPUTS=8, OUTPUTS=4
-    # FC3: INPUTS=8, OUTPUTS=2
-    export_tiled_weights(W1_q, weights_dir / "fc1_weights.mem", outputs=4, inputs=8)
+    # FC1: INPUTS=8, OUTPUTS=8
+    # FC2: INPUTS=4, OUTPUTS=4
+    # FC3: INPUTS=4, OUTPUTS=2
+    export_tiled_weights(W1_q, weights_dir / "fc1_weights.mem", outputs=8, inputs=8)
     export_bias(b1_q, weights_dir / "fc1_bias.mem")
     
-    export_tiled_weights(W2_q, weights_dir / "fc2_weights.mem", outputs=4, inputs=8)
+    export_tiled_weights(W2_q, weights_dir / "fc2_weights.mem", outputs=4, inputs=4)
     export_bias(b2_q, weights_dir / "fc2_bias.mem")
     
-    export_tiled_weights(W3_q, weights_dir / "fc3_weights.mem", outputs=2, inputs=8)
+    export_tiled_weights(W3_q, weights_dir / "fc3_weights.mem", outputs=2, inputs=4)
     export_bias(b3_q, weights_dir / "fc3_bias.mem")
 
     # Copy files to root and tb/ so simulator can find them

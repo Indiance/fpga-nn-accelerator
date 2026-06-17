@@ -73,14 +73,14 @@ module nn_top #(
     state_t state;
     logic [9:0] cnt; // General counter for loading/copying states
 
-    // Instantiation of FC1: 784 -> 128 (INPUTS=8, OUTPUTS=4, ReLU Enabled)
+    // Instantiation of FC1: 784 -> 128 (INPUTS=8, OUTPUTS=8, ReLU Enabled)
     layer_fc #(
         .DATA_WIDTH(DATA_WIDTH),
         .FRAC_BITS(FRAC_BITS),
         .INPUT_SIZE(784),
         .OUTPUT_SIZE(128),
         .INPUTS(8),
-        .OUTPUTS(4),
+        .OUTPUTS(8),
         .RELU_ENABLE(1),
         .WEIGHT_FILE("weights/fc1_weights.mem"),
         .BIAS_FILE("weights/fc1_bias.mem")
@@ -96,13 +96,13 @@ module nn_top #(
         .act_rd_data(fc1_act_rd_data)
     );
 
-    // Instantiation of FC2: 128 -> 64 (INPUTS=8, OUTPUTS=4, ReLU Enabled)
+    // Instantiation of FC2: 128 -> 64 (INPUTS=4, OUTPUTS=4, ReLU Enabled)
     layer_fc #(
         .DATA_WIDTH(DATA_WIDTH),
         .FRAC_BITS(FRAC_BITS),
         .INPUT_SIZE(128),
         .OUTPUT_SIZE(64),
-        .INPUTS(8),
+        .INPUTS(4),
         .OUTPUTS(4),
         .RELU_ENABLE(1),
         .WEIGHT_FILE("weights/fc2_weights.mem"),
@@ -119,13 +119,13 @@ module nn_top #(
         .act_rd_data(fc2_act_rd_data)
     );
 
-    // Instantiation of FC3: 64 -> 10 (INPUTS=8, OUTPUTS=2, ReLU Disabled)
+    // Instantiation of FC3: 64 -> 10 (INPUTS=4, OUTPUTS=2, ReLU Disabled)
     layer_fc #(
         .DATA_WIDTH(DATA_WIDTH),
         .FRAC_BITS(FRAC_BITS),
         .INPUT_SIZE(64),
         .OUTPUT_SIZE(10),
-        .INPUTS(8),
+        .INPUTS(4),
         .OUTPUTS(2),
         .RELU_ENABLE(0),
         .WEIGHT_FILE("weights/fc3_weights.mem"),
