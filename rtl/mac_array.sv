@@ -31,8 +31,10 @@ for(o=0;o<OUTPUTS;o++) begin
         always_ff @(posedge clk) begin
             if(rst)
                 tree[o][0][i] <= 0;
-            else if(valid_in)
-                tree[o][0][i] <= ($signed(activations[i]) * $signed(weights[o][i])) >>> FRAC_BITS;
+            else if(valid_in) begin
+                tree[o][0][i] <= ($signed({{(32-DATA_WIDTH){activations[i][DATA_WIDTH-1]}}, activations[i]}) *
+                                  $signed({{(32-DATA_WIDTH){weights[o][i][DATA_WIDTH-1]}}, weights[o][i]})) >>> FRAC_BITS;
+            end
         end
     end
 end

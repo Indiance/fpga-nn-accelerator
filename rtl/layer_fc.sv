@@ -128,7 +128,6 @@ fsm_controller #(
     .clk            (clk),
     .rst            (rst),
     .start          (start),
-    .mac_valid_out_r(mac_valid_out_r),
     .done           (done),
     .fetch_en       (fetch_en),
     .postproc_en    (postproc_en),
